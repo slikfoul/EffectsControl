@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1
+
+- Magic shield light, glow, opacity, ovality and hue settings.
+
 ## 0.1.0
 
 - One whole-number hue slider for magic shield color.
@@ -21,16 +25,16 @@
 
 ## 0.0.3
 
-- Integer percentages, RGB channels and shield offsets in centimeters.
+- Integer percentages, RGB channels.
 
 ## 0.0.2
 
-- Magic shield light, glow, opacity, color and bubble offsets with original dimensions.
+- Magic shield light, glow, opacity, color with original dimensions.
 
 ## 0.0.1
 
 - Universal weapon light, glow, opacity, visual size and particle count settings.
 - Additional launch, flight and impact coefficients.
-- Separate magic shield light, glow, opacity, color and bubble offsets.
+- Separate magic shield light, glow, opacity, color.
 - F1 Configuration Manager settings with updates to active effects.
 - Original visual values restored when controls are disabled.

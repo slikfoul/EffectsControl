@@ -1,11 +1,11 @@
 function Remove-RetiredShieldConfigEntries {
     param([Parameter(Mandatory)][string]$Text)
-    $sectionPattern='(?ms)(^\[4\. Магический щит\]\r?\n)(.*?)(?=^\[|\z)'
+    $sectionPattern='(?ms)(^\[4\. (?:Магический щит|Magic Shield)\]\r?\n)(.*?)(?=^\[|\z)'
     $sections=[regex]::Matches($Text,$sectionPattern)
     if($sections.Count -gt 1){throw 'Duplicate shield config sections; leave config untouched.'}
     if($sections.Count -eq 0){return $Text}
     $section=$sections[0]
-    $clean=[regex]::Replace($section.Groups[2].Value,'(?m)(?:^#[^\r\n]*\r?\n)*^(?:Ширина|Высота|Глубина)\s*=[^\r\n]*(?:\r?\n|$)','')
+    $clean=[regex]::Replace($section.Groups[2].Value,'(?m)(?:^#[^\r\n]*\r?\n)*^(?:Ширина|Высота|Глубина|Смещение(?: [XYZ](?:, см)?)?|Offset(?: [XYZ](?:, cm)?)?)\s*=[^\r\n]*(?:\r?\n|$)','')
     return $Text.Substring(0,$section.Index)+$section.Groups[1].Value+$clean+$Text.Substring($section.Index+$section.Length)
 }
 
@@ -33,17 +33,6 @@ function ConvertTo-IntegerEffectsConfig {
                 $newValues['Зелёный']=[Convert]::ToInt32($hex.Substring(2,2),16)
                 $newValues['Синий']=[Convert]::ToInt32($hex.Substring(4,2),16)
                 $body=[regex]::Replace($body,'(?m)(?:^#[^\r\n]*\r?\n)*^Цвет\s*=[^\r\n]*(?:\r?\n|$)','')
-            }
-            $oldOffset=[regex]::Match($body,'(?m)^Смещение\s*=\s*([^\r\n]*)')
-            if($oldOffset.Success) {
-                $offset=$oldOffset.Groups[1].Value | ConvertFrom-Json
-                foreach($axis in @('x','y','z')) {
-                    if($offset.PSObject.Properties.Name -notcontains $axis){throw 'Invalid legacy shield offset; leave config untouched.'}
-                    $value=[double]$offset.$axis
-                    if([double]::IsNaN($value) -or [double]::IsInfinity($value)){throw 'Invalid legacy shield offset; leave config untouched.'}
-                    $newValues[('Смещение '+$axis.ToUpperInvariant()+', см')]=[int][math]::Clamp([math]::Round($value*100,[MidpointRounding]::AwayFromZero),-1000,1000)
-                }
-                $body=[regex]::Replace($body,'(?m)(?:^#[^\r\n]*\r?\n)*^Смещение\s*=[^\r\n]*(?:\r?\n|$)','')
             }
             foreach($key in $newValues.Keys) {
                 if($body -notmatch ('(?m)^'+[regex]::Escape($key)+'\s*=')) { $body += "`n# Setting type: Int32`n$key = $($newValues[$key])`n" }
@@ -119,7 +108,6 @@ function ConvertTo-EnglishEffectsConfig {
         'Яркость света'='Light brightness'; 'Свечение'='Glow'; 'Непрозрачность'='Opacity'; 'Размер'='Size'; 'Количество частиц'='Particle count'
         'Запуск атаки'='Attack launch'; 'Полёт'='Flight'; 'Попадание'='Impact'
         'Овальность'='Ovality'; 'Изменять цвет'='Change color'; 'Цвет'='Color'
-        'Смещение X, см'='Offset X, cm'; 'Смещение Y, см'='Offset Y, cm'; 'Смещение Z, см'='Offset Z, cm'
     }
     foreach($section in $sections.Keys) {
         $newName=$sections[$section]
@@ -139,7 +127,7 @@ function ConvertTo-EnglishEffectsConfig {
         })
     }
     $Text=ConvertTo-HueEffectsConfig $Text
-    return [regex]::Replace($Text,'(?m)^# Configuration file was created by plugin EffectsControl v[0-9.]+','# Configuration file was created by plugin EffectsControl v0.1.0')
+    return [regex]::Replace($Text,'(?m)^# Configuration file was created by plugin EffectsControl v[0-9.]+','# Configuration file was created by plugin EffectsControl v0.1.1')
 }
 
 function ConvertTo-HueEffectsConfig {

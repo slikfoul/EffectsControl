@@ -14,7 +14,7 @@ namespace EffectsControl
     {
         public const string PluginGuid = "Slikfoul.EffectsControl";
         public const string PluginName = "EffectsControl";
-        public const string PluginVersion = "0.1.0";
+        public const string PluginVersion = "0.1.1";
         internal static Plugin Instance;
         internal readonly EffectCatalog Catalog = new EffectCatalog();
         private readonly Dictionary<GameObject, VisualState> active = new Dictionary<GameObject, VisualState>();

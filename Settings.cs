@@ -9,7 +9,6 @@ namespace EffectsControl
     public sealed class VisualOptions
     {
         public float Light = 1, Glow = 1, Opacity = 1, Size = 1, Density = 1;
-        public Vector3 Offset = Vector3.zero;
         public float ShieldOvality;
         public bool TintEnabled;
         public Color Tint = Color.white;
@@ -24,7 +23,6 @@ namespace EffectsControl
         public readonly ConfigEntry<int> ShieldLight, ShieldGlow, ShieldOpacity;
         public readonly ConfigEntry<int> ShieldOvality;
         public readonly ConfigEntry<int> ShieldColor;
-        public readonly ConfigEntry<int> ShieldOffsetX, ShieldOffsetY, ShieldOffsetZ;
         public event Action Changed;
 
         public Settings(ConfigFile config)
@@ -46,9 +44,6 @@ namespace EffectsControl
             ShieldOvality = Integer(config, "Ovality", 50, 0, 100, "Bubble shape: 0 is round; 50 is oval; 100 is a narrower oval. Height, protection and colliders are unchanged. Whole numbers only.");
             ShieldTint = config.Bind("4. Magic Shield", "Change color", false, "Replace supported material and particle RGB colors. Disable for original colors; alpha is controlled separately.");
             ShieldColor = Integer(config, "Color", 0, 0, 360, "Hue slider: 0/360 red, 60 yellow, 120 green, 180 cyan, 240 blue, 300 magenta. Used when Change color is enabled. Glow controls intensity; Opacity controls transparency. Whole numbers only.");
-            ShieldOffsetX = Integer(config, "Offset X, cm", 0, -1000, 1000, "Horizontal visual bubble offset in whole centimeters. Does not move the character or gameplay collider.");
-            ShieldOffsetY = Integer(config, "Offset Y, cm", 0, -1000, 1000, "Vertical visual bubble offset in whole centimeters.");
-            ShieldOffsetZ = Integer(config, "Offset Z, cm", 0, -1000, 1000, "Forward/backward visual bubble offset in whole centimeters.");
             config.SettingChanged += (sender, args) => { if (Changed != null) Changed(); };
         }
 
@@ -74,7 +69,6 @@ namespace EffectsControl
                 Color tint = Color.HSVToRGB(ShieldColor.Value / 360f, 1, 1);
                 return new VisualOptions {
                 Light = ShieldLight.Value / 100f, Glow = ShieldGlow.Value / 100f, Opacity = ShieldOpacity.Value / 100f,
-                Offset = new Vector3(ShieldOffsetX.Value, ShieldOffsetY.Value, ShieldOffsetZ.Value) / 100f,
                 ShieldOvality = ShieldOvality.Value / 100f,
                 TintEnabled = ShieldTint.Value, Tint = tint
                 };

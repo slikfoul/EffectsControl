@@ -286,7 +286,6 @@ namespace EffectsControl
         private readonly bool shieldBubble;
         private float size = -1;
         private float ovality = -1;
-        private Vector3 offset;
         public MeshState(MeshFilter filter, bool shieldBubble)
         {
             this.filter = filter; this.shieldBubble = shieldBubble; original = filter.sharedMesh;
@@ -300,10 +299,10 @@ namespace EffectsControl
         {
             if (!filter || filter.sharedMesh != clone) return;
             float nextOvality = shieldBubble ? Mathf.Clamp01(options.ShieldOvality) : 0;
-            if (options.Size == size && options.Offset == offset && nextOvality == ovality) return;
+            if (options.Size == size && nextOvality == ovality) return;
             float horizontal = 1 - nextOvality * 0.5f;
             var scale = new Vector3(horizontal, 1, horizontal) * options.Size;
-            for (int i = 0; i < vertices.Length; i++) adjusted[i] = center + Vector3.Scale(vertices[i] - center, scale) + options.Offset;
+            for (int i = 0; i < vertices.Length; i++) adjusted[i] = center + Vector3.Scale(vertices[i] - center, scale);
             clone.vertices = adjusted;
             for (int i = 0; i < normals.Length; i++) adjustedNormals[i] = nextOvality == 0 ? normals[i] : new Vector3(normals[i].x / horizontal, normals[i].y, normals[i].z / horizontal).normalized;
             for (int i = 0; i < tangents.Length; i++)
@@ -314,7 +313,7 @@ namespace EffectsControl
                 tangent.Normalize(); adjustedTangents[i] = new Vector4(tangent.x, tangent.y, tangent.z, tangents[i].w);
             }
             clone.normals = adjustedNormals; clone.tangents = adjustedTangents;
-            clone.RecalculateBounds(); size = options.Size; offset = options.Offset; ovality = nextOvality;
+            clone.RecalculateBounds(); size = options.Size; ovality = nextOvality;
         }
         public void Dispose()
         {

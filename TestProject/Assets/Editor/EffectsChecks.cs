@@ -31,7 +31,7 @@ public static class EffectsChecks
         bep.GetType("BepInEx.Paths").GetMethod("SetExecutablePath",All).Invoke(null,new object[]{Path.Combine(testRoot,"valheim.exe"),testRoot,managed,new[]{core,managed}});
         Assembly harmony = Assembly.LoadFrom(Path.Combine(core,"0Harmony.dll"));
         mod = Assembly.LoadFrom(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","bin","Release","EffectsControl.dll")));
-        Check(mod.GetName().Version == new Version(0,1,0,0), "Release assembly version");
+        Check(mod.GetName().Version == new Version(0,1,1,0), "Release assembly version");
         Check(!mod.GetReferencedAssemblies().Any(a => a.Name == "System.ValueTuple"), "No ValueTuple runtime dependency");
         Visuals(); ShieldShape(); Catalog(); Configuration(); MigratedConfiguration();
         // Patch all real installed signatures, then unpatch without executing an attack.
@@ -39,7 +39,7 @@ public static class EffectsChecks
         object patcher = Activator.CreateInstance(ht,new object[]{"Slikfoul.EffectsControl.ComponentChecks"});
         try { ht.GetMethod("PatchAll",new[]{typeof(Assembly)}).Invoke(patcher,new object[]{mod}); Check(true,"Harmony patches bind installed game signatures"); }
         finally { ht.GetMethod("UnpatchSelf").Invoke(patcher,null); }
-        string message = "EffectsControl 0.1.0 Unity checks passed: " + checks;
+        string message = "EffectsControl 0.1.1 Unity checks passed: " + checks;
         Debug.Log(message);
         File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","artifacts","unity-checks.txt")),message + "\nComponent tests in Unity Editor; no Valheim runtime playtest.\n");
     }
@@ -102,10 +102,9 @@ public static class EffectsChecks
             Near(values[0].startSize,6,"100 restores existing native size after zero"); Near(light.intensity,3,"100 restores latest native fade");
             Check(filter.sharedMesh.vertices.SequenceEqual(originalVertices),"100 restores mesh vertices");
             Near(emission.rateOverTime.constantMax,40,"100 restores density");
-            object shaped=New("VisualOptions"); Set(shaped,"Offset",new Vector3(0.25f,0.1f,0)); Set(shaped,"TintEnabled",true); Set(shaped,"Tint",new Color(0.2f,0.1f,0.05f));
+            object shaped=New("VisualOptions"); Set(shaped,"TintEnabled",true); Set(shaped,"Tint",new Color(0.2f,0.1f,0.05f));
             Call(state,"Apply",shaped);
-            Vector3 expected=originalVertices[0]+new Vector3(0.25f,0.1f,0);
-            Check((filter.sharedMesh.vertices[0]-expected).sqrMagnitude<0.000001f,"Shield offset preserves native dimensions");
+            Check(filter.sharedMesh.vertices.SequenceEqual(originalVertices),"Tint leaves native mesh position and dimensions unchanged");
             Near(renderer.sharedMaterial.color.r,0.2f,"Shield tint");
             Check(root.transform.localScale==new Vector3(2,3,4) && root.transform.position==new Vector3(4,5,6) && bubble.transform.localScale==visualScale,"Gameplay transforms unchanged");
             Check(collider.radius==7 && meshCollider.radius==meshRadius && body.mass==13 && body.isKinematic && audio.volume==0.7f,"Colliders, rigidbody and sound unchanged");
@@ -229,10 +228,10 @@ public static class EffectsChecks
             Near((float)Get(hiddenImpact,parameter),0,"Zero globals hide fully influenced impact: "+parameter);
         }
         for(int i=0;i<parameters.Length;i++) SetConfig(settings,parameters[i],Mathf.RoundToInt(bases[i]*100));
-        object offset=Get(settings,"ShieldOffsetX"); offset.GetType().GetProperty("Value").SetValue(offset,25,null);
         SetConfig(settings,"ShieldColor",120);
         shieldOptions=get.Invoke(settings,new[]{Stage("Shield"),(object)false});
-        Near(((Vector3)Get(shieldOptions,"Offset")).x,0.25f,"Integer centimeters convert to precise internal meters");
+        Check(mod.GetType("EffectsControl.VisualOptions").GetField("Offset")==null,"Offset removed from visual options");
+        Check(!configText.Contains("Offset X") && !configText.Contains("Offset Y") && !configText.Contains("Offset Z"),"Offset settings absent from generated config");
         Near(((Color)Get(shieldOptions,"Tint")).g,1,"Hue slider selects green");
         Near(((Color)Get(shieldOptions,"Tint")).r,0,"Green hue removes red");
         foreach(int hue in new[]{0,60,120,180,240,300,360}) {
@@ -276,8 +275,8 @@ public static class EffectsChecks
         string path=Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","artifacts","english-migration-fixture.cfg"));
         object config=Activator.CreateInstance(bep.GetType("BepInEx.Configuration.ConfigFile"),new object[]{path,false});
         object settings=Activator.CreateInstance(mod.GetType("EffectsControl.Settings"),All,null,new[]{config},null);
-        string[] fields={"Light","Glow","Opacity","Size","Density","Launch","Flight","Impact","ShieldLight","ShieldGlow","ShieldOpacity","ShieldOvality","ShieldOffsetX","ShieldOffsetY","ShieldOffsetZ"};
-        int[] values={100,51,35,55,40,35,100,35,35,45,30,50,26,-26,100};
+        string[] fields={"Light","Glow","Opacity","Size","Density","Launch","Flight","Impact","ShieldLight","ShieldGlow","ShieldOpacity","ShieldOvality"};
+        int[] values={100,51,35,55,40,35,100,35,35,45,30,50};
         for(int i=0;i<fields.Length;i++) Check(ConfigValue(settings,fields[i])==values[i],"English settings bind migrated value: "+fields[i]);
         Check(ConfigValue(settings,"ShieldColor")==217,"Migrated RGB hue binds to integer Color slider");
         object tint=Get(settings,"ShieldTint"); Check((bool)tint.GetType().GetProperty("Value").GetValue(tint,null),"Migrated toggle binds to English field");

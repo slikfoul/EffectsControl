@@ -1,12 +1,12 @@
 # EffectsControl
 
-A client-side BepInEx mod for Valheim that reduces obstructive weapon and magic shield visuals. Version 0.1.0 is a development build for testing in game.
+A client-side BepInEx mod for Valheim that reduces obstructive weapon and magic shield visuals. Version 0.1.1 is a development build for testing in game.
 
 ## In-game settings
 
 Open F1 Configuration Manager and select EffectsControl. Configuration Manager is optional and installed separately. Changes apply immediately.
 
-All numeric settings are whole integers. Percentages use 0-100; bubble offsets use whole centimeters. Color uses one hue slider.
+All numeric settings are whole integers. Percentages use 0-100. Color uses one hue slider.
 
 ## Weapon effects
 
@@ -32,13 +32,13 @@ Values are captured from each instance. Repeated changes do not accumulate. Upda
 
 ## Magic shield
 
-Section **4. Magic Shield** controls light, glow, opacity, ovality, optional color and visual bubble offsets.
+Section **4. Magic Shield** controls light, glow, opacity, ovality and optional color.
 
 **Ovality** affects only the readable Sphere mesh of a registered shield effect: 0 is the original round shape, 50 gives an oval shape with horizontal dimensions at 75% and unchanged height, and 100 gives a narrower oval. Default: **50**. There are no separate width, height or depth settings.
 
 **Change color** is disabled by default. **Color** is a whole-number hue slider from 0 to 360: red at 0/360, yellow at 60, green at 120, cyan at 180, blue at 240 and magenta at 300. Glow controls color intensity. Shield opacity controls alpha independently.
 
-For original shield visuals, set light, glow and opacity to 100, ovality to 0, disable Change color and reset offsets, or disable Magic shield. Protection, damage absorption and shield duration are unchanged.
+For original shield visuals, set light, glow and opacity to 100, ovality to 0, disable Change color, or disable Magic shield. Protection, damage absorption and shield duration are unchanged.
 
 ## Installation
 

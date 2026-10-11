@@ -36,7 +36,7 @@ Other value = 0.75
 Размер = 2.75
 '@
 $converted=ConvertTo-IntegerEffectsConfig $fixture
-foreach($line in @('Свечение = 51','Непрозрачность = 35','Размер = 55','Красный = 51','Зелёный = 128','Синий = 255','Смещение X, см = 26','Смещение Y, см = -26','Смещение Z, см = 100','Изменять цвет = true','Полёт = 100','Запуск атаки = 35','Попадание = 35','Other value = 0.75','Размер = 2.75','Цвет = ABCDEF00')) {
+foreach($line in @('Свечение = 51','Непрозрачность = 35','Размер = 55','Красный = 51','Зелёный = 128','Синий = 255','Изменять цвет = true','Полёт = 100','Запуск атаки = 35','Попадание = 35','Other value = 0.75','Размер = 2.75','Цвет = ABCDEF00')) {
     if($converted -notmatch ('(?m)^'+[regex]::Escape($line)+'\r?$')){throw "Migration mismatch: $line"}
 }
 if($converted -match '(?m)^(?:Ширина|Высота|Глубина)\s*='){throw 'Retired dimensions remain'}
@@ -44,7 +44,7 @@ if((ConvertTo-IntegerEffectsConfig $converted) -cne $converted){throw 'Repeated 
 $failed=$false
 try { ConvertTo-IntegerEffectsConfig $fixture.Replace('Цвет = 3380FFFF','Цвет = invalid') | Out-Null } catch { $failed=$true }
 if(-not $failed){throw 'Invalid legacy color was not rejected'}
-Write-Output 'Integer config migration checks passed: rounding, percentage preservation, RGB, signed centimeters, unrelated values, retired keys, idempotence and malformed input.'
+Write-Output 'Integer config migration checks passed: rounding, percentage preservation, RGB, unrelated values, retired keys, idempotence and malformed input.'
 $stageConfig=ConvertTo-StageInfluenceConfig $fixture -InitializeStageInfluence
 foreach($line in @('Запуск атаки = 100','Полёт = 0','Попадание = 100','Свечение = 51','Количество частиц = 40','Изменять цвет = true','Красный = 51','Other value = 0.75')) {
     if($stageConfig -notmatch ('(?m)^'+[regex]::Escape($line)+'\r?$')){throw "Stage influence migration mismatch: $line"}
@@ -68,7 +68,7 @@ try { ConvertTo-OvalShieldConfig $converted.Replace('Красный = 51','Кр�
 if(-not $failed){throw 'Invalid channel was not rejected'}
 Write-Output 'Oval shield migration checks passed: original color preserved, RGB sliders removed, oval default, idempotence and later selections preserved.'
 $englishConfig=ConvertTo-EnglishEffectsConfig $fixture
-foreach($line in @('[1. General]','[2. Weapons - General]','[3. Weapons - Stages]','[4. Magic Shield]','Enable mod = true','Light brightness = 100','Glow = 51','Opacity = 35','Size = 55','Particle count = 40','Attack launch = 35','Flight = 100','Impact = 35','Change color = true','Color = 217','Ovality = 50','Offset X, cm = 26','Offset Y, cm = -26','Offset Z, cm = 100','Other value = 0.75','Цвет = ABCDEF00','Размер = 2.75')) {
+foreach($line in @('[1. General]','[2. Weapons - General]','[3. Weapons - Stages]','[4. Magic Shield]','Enable mod = true','Light brightness = 100','Glow = 51','Opacity = 35','Size = 55','Particle count = 40','Attack launch = 35','Flight = 100','Impact = 35','Change color = true','Color = 217','Ovality = 50','Other value = 0.75','Цвет = ABCDEF00','Размер = 2.75')) {
     if($englishConfig -notmatch ('(?m)^'+[regex]::Escape($line)+'\r?$')){throw "English migration mismatch: $line"}
 }
 if((ConvertTo-EnglishEffectsConfig $englishConfig) -cne $englishConfig){throw 'English conversion is not idempotent'}
@@ -95,3 +95,15 @@ foreach($invalid in @('invalid','361','-1')) {
     if(-not $failed){throw "Invalid hue was accepted: $invalid"}
 }
 Write-Output 'Hue migration checks passed: RGB primaries, secondary hues, dark colors, integer selections, range guards, unrelated values and idempotence.'
+foreach($section in @('4. Magic Shield','4. Магический щит')) {
+    foreach($newline in @("`n","`r`n")) {
+        $old=@("[$section]",'## Retired offset description','# Setting type: Int32','Offset X, cm = 75','Offset Y, cm = -23','Offset Z, cm = 100','Смещение X, см = 20','Смещение Y, см = -10','Смещение Z, см = 50','Смещение = invalid-retired-vector','Offset = invalid-retired-vector','Keep = 42','','[Unrelated]','Offset X, cm = 7','Смещение = keep') -join $newline
+        $result=Remove-RetiredShieldConfigEntries $old
+        $own=($result -split '\[Unrelated\]')[0]
+        if($own -match 'Offset|Смещение|Retired offset description'){throw 'Retired offset setting or comments remain'}
+        if($result -notmatch '(?m)^Keep = 42\r?$' -or $result -notmatch '(?m)^Offset X, cm = 7\r?$' -or $result -notmatch '(?m)^Смещение = keep\r?$'){throw 'Offset removal changed unrelated configuration'}
+        if((Remove-RetiredShieldConfigEntries $result) -cne $result){throw 'Offset removal is not idempotent'}
+    }
+}
+if(($englishConfig -split '\[Unrelated section\]')[0] -match '(?m)^(?:Offset|Смещение)'){throw 'Migrated configuration still contains offsets'}
+Write-Output 'Retired offset removal checks passed: English and legacy sections, comments, both newline formats, unrelated settings and idempotence.'
