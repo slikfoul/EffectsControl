@@ -1,0 +1,10 @@
+bin/
+obj/
+artifacts/
+backups/
+research/
+TestProject/Library/
+TestProject/Logs/
+TestProject/Temp/
+TestProject/UserSettings/
+VALIDATION.md
