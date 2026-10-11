@@ -23,7 +23,7 @@ namespace EffectsControl
         public readonly ConfigEntry<int> Launch, Flight, Impact;
         public readonly ConfigEntry<int> ShieldLight, ShieldGlow, ShieldOpacity;
         public readonly ConfigEntry<int> ShieldOvality;
-        public readonly ConfigEntry<string> ShieldColor;
+        public readonly ConfigEntry<int> ShieldColor;
         public readonly ConfigEntry<int> ShieldOffsetX, ShieldOffsetY, ShieldOffsetZ;
         public event Action Changed;
 
@@ -43,9 +43,9 @@ namespace EffectsControl
             ShieldLight = Percent(config, "4. Magic Shield", "Light brightness", 35, "Intensity of lights in the magic shield effect.");
             ShieldGlow = Percent(config, "4. Magic Shield", "Glow", 45, "Supported emissive/additive colors of the bubble and particles.");
             ShieldOpacity = Percent(config, "4. Magic Shield", "Opacity", 30, "Bubble and particle alpha. 0 hides the visual shield; protection and duration are unchanged.");
-            ShieldOvality = Integer(config, "Ovality", 50, 0, 100, "Bubble shape: 0 is the original round shape; 50 is the previous oval appearance; 100 is a narrower oval. Height, protection and colliders are unchanged. Whole numbers only.");
+            ShieldOvality = Integer(config, "Ovality", 50, 0, 100, "Bubble shape: 0 is round; 50 is oval; 100 is a narrower oval. Height, protection and colliders are unchanged. Whole numbers only.");
             ShieldTint = config.Bind("4. Magic Shield", "Change color", false, "Replace supported material and particle RGB colors. Disable for original colors; alpha is controlled separately.");
-            ShieldColor = config.Bind("4. Magic Shield", "Color", "330000", "One RGB color code, such as 330000 or #330000. Used when Change color is enabled. Alpha is controlled by Opacity; no separate channel sliders.");
+            ShieldColor = Integer(config, "Color", 0, 0, 360, "Hue slider: 0/360 red, 60 yellow, 120 green, 180 cyan, 240 blue, 300 magenta. Used when Change color is enabled. Glow controls intensity; Opacity controls transparency. Whole numbers only.");
             ShieldOffsetX = Integer(config, "Offset X, cm", 0, -1000, 1000, "Horizontal visual bubble offset in whole centimeters. Does not move the character or gameplay collider.");
             ShieldOffsetY = Integer(config, "Offset Y, cm", 0, -1000, 1000, "Vertical visual bubble offset in whole centimeters.");
             ShieldOffsetZ = Integer(config, "Offset Z, cm", 0, -1000, 1000, "Forward/backward visual bubble offset in whole centimeters.");
@@ -71,8 +71,7 @@ namespace EffectsControl
         {
             if (!Enabled.Value || (stage == EffectStage.Shield ? (!Shields.Value || shieldConflict) : !Weapons.Value)) return VisualOptions.Original();
             if (stage == EffectStage.Shield) {
-                Color tint;
-                if (!ColorUtility.TryParseHtmlString("#" + ShieldColor.Value.Trim().TrimStart('#'), out tint)) tint = new Color(51f / 255f, 0, 0, 1);
+                Color tint = Color.HSVToRGB(ShieldColor.Value / 360f, 1, 1);
                 return new VisualOptions {
                 Light = ShieldLight.Value / 100f, Glow = ShieldGlow.Value / 100f, Opacity = ShieldOpacity.Value / 100f,
                 Offset = new Vector3(ShieldOffsetX.Value, ShieldOffsetY.Value, ShieldOffsetZ.Value) / 100f,

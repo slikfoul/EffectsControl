@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0
+
+- One whole-number hue slider for magic shield color.
+
 ## 0.0.6
 
 - Stage influence defaults: Attack launch 100%, Flight 0%, Impact 100%.

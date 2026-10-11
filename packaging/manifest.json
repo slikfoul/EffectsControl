@@ -1,6 +1,6 @@
 {
   "name": "EffectsControl",
-  "version_number": "0.0.6",
+  "version_number": "0.1.0",
   "website_url": "https://github.com/slikfoul/EffectsControl",
   "description": "Client-side universal weapon effects and magic shield controls: light, glow, opacity, visual size and particle density, with live in-game configuration.",
   "dependencies": ["denikson-BepInExPack_Valheim-5.4.2351"]

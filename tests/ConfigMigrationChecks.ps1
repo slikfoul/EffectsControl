@@ -68,7 +68,7 @@ try { ConvertTo-OvalShieldConfig $converted.Replace('Красный = 51','Кр�
 if(-not $failed){throw 'Invalid channel was not rejected'}
 Write-Output 'Oval shield migration checks passed: original color preserved, RGB sliders removed, oval default, idempotence and later selections preserved.'
 $englishConfig=ConvertTo-EnglishEffectsConfig $fixture
-foreach($line in @('[1. General]','[2. Weapons - General]','[3. Weapons - Stages]','[4. Magic Shield]','Enable mod = true','Light brightness = 100','Glow = 51','Opacity = 35','Size = 55','Particle count = 40','Attack launch = 35','Flight = 100','Impact = 35','Change color = true','Color = 3380FF','Ovality = 50','Offset X, cm = 26','Offset Y, cm = -26','Offset Z, cm = 100','Other value = 0.75','Цвет = ABCDEF00','Размер = 2.75')) {
+foreach($line in @('[1. General]','[2. Weapons - General]','[3. Weapons - Stages]','[4. Magic Shield]','Enable mod = true','Light brightness = 100','Glow = 51','Opacity = 35','Size = 55','Particle count = 40','Attack launch = 35','Flight = 100','Impact = 35','Change color = true','Color = 217','Ovality = 50','Offset X, cm = 26','Offset Y, cm = -26','Offset Z, cm = 100','Other value = 0.75','Цвет = ABCDEF00','Размер = 2.75')) {
     if($englishConfig -notmatch ('(?m)^'+[regex]::Escape($line)+'\r?$')){throw "English migration mismatch: $line"}
 }
 if((ConvertTo-EnglishEffectsConfig $englishConfig) -cne $englishConfig){throw 'English conversion is not idempotent'}
@@ -81,3 +81,17 @@ Write-Output 'English migration checks passed: all labels, values and unrelated 
 $fixtureDirectory=Join-Path $PSScriptRoot '..\artifacts'
 New-Item -ItemType Directory -Path $fixtureDirectory -Force | Out-Null
 [IO.File]::WriteAllText((Join-Path $fixtureDirectory 'english-migration-fixture.cfg'),$englishConfig,(New-Object Text.UTF8Encoding $false))
+$colors=[ordered]@{FF0000=0;'#00FF00'=120; '0000FF'=240; FFFF00=60; '00FFFF'=180; FF00FF=300; '3380FFFF'=217; '330000'=0; '808080'=0; '000000'=0; '360'=360; '42'=42}
+foreach($color in $colors.Keys) {
+    $old="[4. Magic Shield]`n# Setting type: String`nColor = $color`nOpacity = 25`n`n[Unrelated]`nColor = ABCDEF`n"
+    $result=ConvertTo-EnglishEffectsConfig $old
+    if($result -notmatch ('(?m)^Color = '+$colors[$color]+'\r?$')){throw "Hue conversion failed: $color"}
+    if($result -notmatch '(?m)^Color = ABCDEF\r?$' -or $result -notmatch '(?m)^Opacity = 25\r?$'){throw 'Hue conversion changed unrelated settings'}
+    if((ConvertTo-EnglishEffectsConfig $result) -cne $result){throw 'Hue conversion is not idempotent'}
+}
+foreach($invalid in @('invalid','361','-1')) {
+    $failed=$false
+    try { ConvertTo-EnglishEffectsConfig "[4. Magic Shield]`nColor = $invalid`n" | Out-Null } catch {$failed=$true}
+    if(-not $failed){throw "Invalid hue was accepted: $invalid"}
+}
+Write-Output 'Hue migration checks passed: RGB primaries, secondary hues, dark colors, integer selections, range guards, unrelated values and idempotence.'

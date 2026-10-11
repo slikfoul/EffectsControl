@@ -138,5 +138,39 @@ function ConvertTo-EnglishEffectsConfig {
             return '['+$newName+"]`n"+$body
         })
     }
-    return [regex]::Replace($Text,'(?m)^# Configuration file was created by plugin EffectsControl v[0-9.]+','# Configuration file was created by plugin EffectsControl v0.0.6')
+    $Text=ConvertTo-HueEffectsConfig $Text
+    return [regex]::Replace($Text,'(?m)^# Configuration file was created by plugin EffectsControl v[0-9.]+','# Configuration file was created by plugin EffectsControl v0.1.0')
+}
+
+function ConvertTo-HueEffectsConfig {
+    param([Parameter(Mandatory)][string]$Text)
+    $pattern='(?ms)(^\[4\. Magic Shield\]\r?\n)(.*?)(?=^\[|\z)'
+    if([regex]::Matches($Text,$pattern).Count -gt 1){throw 'Duplicate shield config sections; leave config untouched.'}
+    return [regex]::Replace($Text,$pattern,[Text.RegularExpressions.MatchEvaluator]{param($section)
+        if([regex]::Matches($section.Groups[2].Value,'(?m)^Color\s*=').Count -gt 1){throw 'Duplicate shield colors; leave config untouched.'}
+        $body=[regex]::Replace($section.Groups[2].Value,'(?m)(?:^#[^\r\n]*\r?\n)*^Color\s*=\s*([^\r\n]*)(?:\r?\n|$)',[Text.RegularExpressions.MatchEvaluator]{param($entry)
+            $raw=$entry.Groups[1].Value.Trim()
+            $hex=$raw.TrimStart('#')
+            if($hex -match '^(?:[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$') {
+                $red=[Convert]::ToInt32($hex.Substring(0,2),16)/255.0
+                $green=[Convert]::ToInt32($hex.Substring(2,2),16)/255.0
+                $blue=[Convert]::ToInt32($hex.Substring(4,2),16)/255.0
+                $maximum=[math]::Max($red,[math]::Max($green,$blue))
+                $delta=$maximum-[math]::Min($red,[math]::Min($green,$blue))
+                $hue=0.0
+                if($delta -gt 0) {
+                    if($maximum -eq $red){$hue=60*(($green-$blue)/$delta)}
+                    elseif($maximum -eq $green){$hue=60*(($blue-$red)/$delta+2)}
+                    else{$hue=60*(($red-$green)/$delta+4)}
+                    if($hue -lt 0){$hue+=360}
+                }
+                $value=[int][math]::Round($hue,[MidpointRounding]::AwayFromZero)
+            } else {
+                $value=0
+                if(-not [int]::TryParse($raw,[ref]$value) -or $value -lt 0 -or $value -gt 360){throw 'Invalid shield hue; leave config untouched.'}
+            }
+            return "## Hue slider: 0/360 red, 60 yellow, 120 green, 180 cyan, 240 blue, 300 magenta. Whole numbers only.`n# Setting type: Int32`n# Acceptable value range: From 0 to 360`nColor = $value`n"
+        })
+        return $section.Groups[1].Value+$body
+    })
 }

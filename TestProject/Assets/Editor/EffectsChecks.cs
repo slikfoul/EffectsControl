@@ -31,7 +31,7 @@ public static class EffectsChecks
         bep.GetType("BepInEx.Paths").GetMethod("SetExecutablePath",All).Invoke(null,new object[]{Path.Combine(testRoot,"valheim.exe"),testRoot,managed,new[]{core,managed}});
         Assembly harmony = Assembly.LoadFrom(Path.Combine(core,"0Harmony.dll"));
         mod = Assembly.LoadFrom(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","bin","Release","EffectsControl.dll")));
-        Check(mod.GetName().Version == new Version(0,0,6,0), "Release assembly version");
+        Check(mod.GetName().Version == new Version(0,1,0,0), "Release assembly version");
         Check(!mod.GetReferencedAssemblies().Any(a => a.Name == "System.ValueTuple"), "No ValueTuple runtime dependency");
         Visuals(); ShieldShape(); Catalog(); Configuration(); MigratedConfiguration();
         // Patch all real installed signatures, then unpatch without executing an attack.
@@ -39,7 +39,7 @@ public static class EffectsChecks
         object patcher = Activator.CreateInstance(ht,new object[]{"Slikfoul.EffectsControl.ComponentChecks"});
         try { ht.GetMethod("PatchAll",new[]{typeof(Assembly)}).Invoke(patcher,new object[]{mod}); Check(true,"Harmony patches bind installed game signatures"); }
         finally { ht.GetMethod("UnpatchSelf").Invoke(patcher,null); }
-        string message = "EffectsControl 0.0.6 Unity checks passed: " + checks;
+        string message = "EffectsControl 0.1.0 Unity checks passed: " + checks;
         Debug.Log(message);
         File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","artifacts","unity-checks.txt")),message + "\nComponent tests in Unity Editor; no Valheim runtime playtest.\n");
     }
@@ -192,7 +192,7 @@ public static class EffectsChecks
         foreach(var field in settings.GetType().GetFields(All)) {
             if(!field.FieldType.IsGenericType || field.FieldType.GetGenericTypeDefinition().FullName!="BepInEx.Configuration.ConfigEntry`1") continue;
             Type valueType=field.FieldType.GetGenericArguments()[0];
-            Check(valueType==typeof(int) || valueType==typeof(bool) || (field.Name=="ShieldColor" && valueType==typeof(string)),"Numeric settings use integers; color is one text code: "+field.Name);
+            Check(valueType==typeof(int) || valueType==typeof(bool),"Numeric settings use integers: "+field.Name);
         }
         Check(!configText.Contains("Ширина =") && !configText.Contains("Высота =") && !configText.Contains("Глубина ="),"Retired shield dimensions absent from generated config");
         Check(mod.GetType("EffectsControl.VisualOptions").GetField("Shape")==null,"Anisotropic geometry control removed from DLL");
@@ -230,10 +230,26 @@ public static class EffectsChecks
         }
         for(int i=0;i<parameters.Length;i++) SetConfig(settings,parameters[i],Mathf.RoundToInt(bases[i]*100));
         object offset=Get(settings,"ShieldOffsetX"); offset.GetType().GetProperty("Value").SetValue(offset,25,null);
-        object colorEntry=Get(settings,"ShieldColor"); colorEntry.GetType().GetProperty("Value").SetValue(colorEntry,"800000",null);
+        SetConfig(settings,"ShieldColor",120);
         shieldOptions=get.Invoke(settings,new[]{Stage("Shield"),(object)false});
         Near(((Vector3)Get(shieldOptions,"Offset")).x,0.25f,"Integer centimeters convert to precise internal meters");
-        Near(((Color)Get(shieldOptions,"Tint")).r,128f/255f,"Single color code preserves selected RGB precision");
+        Near(((Color)Get(shieldOptions,"Tint")).g,1,"Hue slider selects green");
+        Near(((Color)Get(shieldOptions,"Tint")).r,0,"Green hue removes red");
+        foreach(int hue in new[]{0,60,120,180,240,300,360}) {
+            SetConfig(settings,"ShieldColor",hue);
+            shieldOptions=get.Invoke(settings,new[]{Stage("Shield"),(object)false});
+            Color actual=(Color)Get(shieldOptions,"Tint");
+            Color[] expected={Color.red,new Color(1,1,0),Color.green,Color.cyan,Color.blue,Color.magenta,Color.red};
+            int index=hue/60;
+            Near(actual.r,expected[index].r,"Hue red channel at "+hue);
+            Near(actual.g,expected[index].g,"Hue green channel at "+hue);
+            Near(actual.b,expected[index].b,"Hue blue channel at "+hue);
+        }
+        SetConfig(settings,"ShieldColor",999); Check(ConfigValue(settings,"ShieldColor")==360,"Hue is clamped to the slider maximum");
+        SetConfig(settings,"ShieldColor",-1); Check(ConfigValue(settings,"ShieldColor")==0,"Hue is clamped to the slider minimum");
+        object tintToggle=Get(settings,"ShieldTint"); tintToggle.GetType().GetProperty("Value").SetValue(tintToggle,false,null);
+        shieldOptions=get.Invoke(settings,new[]{Stage("Shield"),(object)false});
+        Check(!(bool)Get(shieldOptions,"TintEnabled"),"Color slider respects Change color toggle");
         Check(!configText.Contains("Красный =") && !configText.Contains("Зелёный =") && !configText.Contains("Синий ="),"Separate RGB sliders absent");
         entry=Get(settings,"Enabled"); entry.GetType().GetProperty("Value").SetValue(entry,false,null);
         var off=get.Invoke(settings,new[]{Stage("Impact"),(object)false}); Near((float)Get(off,"Size"),1,"Disabling restores original coefficients");
@@ -263,7 +279,7 @@ public static class EffectsChecks
         string[] fields={"Light","Glow","Opacity","Size","Density","Launch","Flight","Impact","ShieldLight","ShieldGlow","ShieldOpacity","ShieldOvality","ShieldOffsetX","ShieldOffsetY","ShieldOffsetZ"};
         int[] values={100,51,35,55,40,35,100,35,35,45,30,50,26,-26,100};
         for(int i=0;i<fields.Length;i++) Check(ConfigValue(settings,fields[i])==values[i],"English settings bind migrated value: "+fields[i]);
-        object color=Get(settings,"ShieldColor"); Check((string)color.GetType().GetProperty("Value").GetValue(color,null)=="3380FF","Migrated color binds to English field");
+        Check(ConfigValue(settings,"ShieldColor")==217,"Migrated RGB hue binds to integer Color slider");
         object tint=Get(settings,"ShieldTint"); Check((bool)tint.GetType().GetProperty("Value").GetValue(tint,null),"Migrated toggle binds to English field");
     }
 
