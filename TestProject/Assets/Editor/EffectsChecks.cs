@@ -31,7 +31,7 @@ public static class EffectsChecks
         bep.GetType("BepInEx.Paths").GetMethod("SetExecutablePath",All).Invoke(null,new object[]{Path.Combine(testRoot,"valheim.exe"),testRoot,managed,new[]{core,managed}});
         Assembly harmony = Assembly.LoadFrom(Path.Combine(core,"0Harmony.dll"));
         mod = Assembly.LoadFrom(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","bin","Release","EffectsControl.dll")));
-        Check(mod.GetName().Version == new Version(0,1,1,0), "Release assembly version");
+        Check(mod.GetName().Version == new Version(1,0,0,0), "Release assembly version");
         Check(!mod.GetReferencedAssemblies().Any(a => a.Name == "System.ValueTuple"), "No ValueTuple runtime dependency");
         Visuals(); ShieldShape(); Catalog(); Configuration(); MigratedConfiguration();
         // Patch all real installed signatures, then unpatch without executing an attack.
@@ -39,7 +39,7 @@ public static class EffectsChecks
         object patcher = Activator.CreateInstance(ht,new object[]{"Slikfoul.EffectsControl.ComponentChecks"});
         try { ht.GetMethod("PatchAll",new[]{typeof(Assembly)}).Invoke(patcher,new object[]{mod}); Check(true,"Harmony patches bind installed game signatures"); }
         finally { ht.GetMethod("UnpatchSelf").Invoke(patcher,null); }
-        string message = "EffectsControl 0.1.1 Unity checks passed: " + checks;
+        string message = "EffectsControl 1.0.0 Unity checks passed: " + checks;
         Debug.Log(message);
         File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","artifacts","unity-checks.txt")),message + "\nComponent tests in Unity Editor; no Valheim runtime playtest.\n");
     }

@@ -11,6 +11,9 @@ foreach ($field in @('name','version_number','website_url','description','depend
 }
 $version = $manifest.version_number
 if ($manifest.name -cne 'EffectsControl' -or $version -notmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') { throw 'Invalid package name/version.' }
+$publicRelease = [version]$version -ge [version]'1.0.0'
+$readmePath = if ($publicRelease) { Join-Path $PSScriptRoot 'README.Thunderstore.md' } else { Join-Path $packaging 'README.md' }
+$changelogPath = if ($publicRelease) { Join-Path $PSScriptRoot 'CHANGELOG.release.md' } else { Join-Path $packaging 'CHANGELOG.md' }
 if ($manifest.description.Length -eq 0 -or $manifest.description.Length -gt 250) { throw 'Invalid description length.' }
 if (@($manifest.dependencies).Count -ne 1 -or $manifest.dependencies[0] -cne 'denikson-BepInExPack_Valheim-5.4.2351') { throw 'Unexpected dependencies.' }
 $dll = Join-Path $PSScriptRoot 'bin\Release\EffectsControl.dll'
@@ -19,7 +22,7 @@ $plugin = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'Plugin.cs') -Raw
 if ($plugin -notmatch ('public const string PluginVersion = "' + [regex]::Escape($version) + '";')) { throw 'Plugin and manifest versions differ.' }
 $project = [xml](Get-Content -LiteralPath (Join-Path $PSScriptRoot 'EffectsControl.csproj') -Raw)
 if ($project.Project.PropertyGroup.Version -cne $version) { throw 'Project and manifest versions differ.' }
-$changelog = Get-Content -LiteralPath (Join-Path $packaging 'CHANGELOG.md') -Raw
+$changelog = Get-Content -LiteralPath $changelogPath -Raw
 $headings = @([regex]::Matches($changelog, '(?m)^## (\d+\.\d+\.\d+)\r?$'))
 if (!$headings.Count -or $headings[0].Groups[1].Value -cne $version) { throw 'Changelog and manifest versions differ.' }
 if ([version]$version -ge [version]'1.0.0' -and $changelog -match '(?m)^## 0\.') { throw 'Development entries must not be in the public changelog.' }
@@ -41,8 +44,8 @@ $archive = Join-Path $artifacts "Slikfoul-EffectsControl-$version.zip"
 $temporary = Join-Path $artifacts ('package-' + [guid]::NewGuid().ToString('N') + '.zip')
 $sources = [ordered]@{
     'manifest.json' = Join-Path $packaging 'manifest.json'
-    'README.md' = Join-Path $packaging 'README.md'
-    'CHANGELOG.md' = Join-Path $packaging 'CHANGELOG.md'
+    'README.md' = $readmePath
+    'CHANGELOG.md' = $changelogPath
     'icon.png' = $icon
     'LICENSE' = Join-Path $PSScriptRoot 'LICENSE'
     'BepInEx/plugins/EffectsControl/EffectsControl.dll' = $dll
