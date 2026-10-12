@@ -12,10 +12,11 @@ namespace EffectsControl
         private sealed class StageBox { public EffectStage Stage; }
         private int registeredLists;
         private readonly Dictionary<string, EffectStage> projectiles = new Dictionary<string, EffectStage>(StringComparer.Ordinal);
+        private readonly Dictionary<string, EffectStage> effects = new Dictionary<string, EffectStage>(StringComparer.Ordinal);
         private readonly HashSet<GameObject> visited = new HashSet<GameObject>();
         public int ListCount { get { return registeredLists; } }
         public int ProjectileCount { get { return projectiles.Count; } }
-        public void Clear() { lists = new ConditionalWeakTable<EffectList, StageBox>(); registeredLists = 0; projectiles.Clear(); visited.Clear(); }
+        public void Clear() { lists = new ConditionalWeakTable<EffectList, StageBox>(); registeredLists = 0; projectiles.Clear(); effects.Clear(); visited.Clear(); }
         public bool TryList(EffectList list, out EffectStage stage)
         {
             StageBox value;
@@ -24,9 +25,19 @@ namespace EffectsControl
         }
         public bool TryProjectile(GameObject instance, out EffectStage stage)
         {
+            return TryInstance(projectiles, instance, out stage);
+        }
+        public bool TryEffect(GameObject instance, out EffectStage stage)
+        {
+            return TryInstance(effects, instance, out stage);
+        }
+        private static bool TryInstance(Dictionary<string, EffectStage> prefabs, GameObject instance, out EffectStage stage)
+        {
+            stage = EffectStage.Launch;
+            if (!instance) return false;
             string name = instance.name;
             if (name.EndsWith("(Clone)", StringComparison.Ordinal)) name = name.Substring(0, name.Length - 7);
-            return projectiles.TryGetValue(name, out stage);
+            return prefabs.TryGetValue(name, out stage);
         }
 
         public static bool IsWeapon(ItemDrop.ItemData item)
@@ -102,11 +113,16 @@ namespace EffectsControl
 
         private void Visit(GameObject prefab, EffectStage stage)
         {
-            if (!prefab || !visited.Add(prefab)) return;
+            if (!prefab) return;
             // Do not recurse into summoned creatures, placed pieces or ambient status effects.
             if (prefab.GetComponentInChildren<Character>(true) || prefab.GetComponentInChildren<Piece>(true)) return;
             var projectile = prefab.GetComponent<Projectile>();
             var aoe = prefab.GetComponent<Aoe>();
+            EffectStage prefabStage = stage == EffectStage.Shield ? stage : (aoe ? EffectStage.Impact : stage);
+            // Remote ZDO copies bypass EffectList.Create. Keep every linked effect prefab,
+            // including plain particle/light objects and shield bubbles, for that path.
+            if (!effects.ContainsKey(prefab.name) || prefabStage == EffectStage.Shield) effects[prefab.name] = prefabStage;
+            if (!visited.Add(prefab)) return;
             if (projectile || aoe)
             {
                 projectiles[prefab.name] = aoe ? EffectStage.Impact : stage;

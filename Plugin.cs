@@ -14,11 +14,12 @@ namespace EffectsControl
     {
         public const string PluginGuid = "Slikfoul.EffectsControl";
         public const string PluginName = "EffectsControl";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.0.1";
         internal static Plugin Instance;
         internal readonly EffectCatalog Catalog = new EffectCatalog();
         private readonly Dictionary<GameObject, VisualState> active = new Dictionary<GameObject, VisualState>();
         private readonly Dictionary<GameObject, EffectStage> pending = new Dictionary<GameObject, EffectStage>();
+        private readonly HashSet<GameObject> pendingNetwork = new HashSet<GameObject>();
         private readonly List<GameObject> expired = new List<GameObject>();
         private readonly VisualOptions[] options = new VisualOptions[4];
         private Settings settings;
@@ -80,6 +81,13 @@ namespace EffectsControl
         private void LateUpdate()
         {
             if (!ready) return;
+            // A network object can arrive before ObjectDB/scene catalog initialization.
+            // Resolve it only after the requested rebuild, using this client's settings.
+            if (!rebuild)
+            {
+                foreach (var root in pendingNetwork) ObserveNetworkEffect(root);
+                pendingNetwork.Clear();
+            }
             RefreshOptions();
             // Instantiation invokes Awake on the root before some children. Defer component
             // capture and all visual writes until every native Awake/Start has completed, so
@@ -129,6 +137,19 @@ namespace EffectsControl
             });
         }
 
+        internal void ObserveNetworkEffect(GameObject root)
+        {
+            if (!ready || !root) return;
+            if (rebuild) { pendingNetwork.Add(root); return; }
+            EffectStage stage;
+            if (!Catalog.TryEffect(root, out stage)) return;
+            Guard(() => {
+                var projectile = root.GetComponent<Projectile>(); if (projectile) Catalog.RegisterProjectile(projectile);
+                var aoe = root.GetComponent<Aoe>(); if (aoe) Catalog.RegisterAoe(aoe);
+                Observe(root, stage);
+            });
+        }
+
         internal void Guard(Action action) { try { action(); } catch (Exception error) { Report(error); } }
         private void Report(Exception error)
         {
@@ -140,7 +161,7 @@ namespace EffectsControl
             ready = false;
             if (harmony != null) harmony.UnpatchSelf();
             foreach (var state in active.Values) state.Dispose();
-            active.Clear(); pending.Clear(); Catalog.Clear(); Instance = null;
+            active.Clear(); pending.Clear(); pendingNetwork.Clear(); Catalog.Clear(); Instance = null;
         }
     }
 
@@ -178,7 +199,7 @@ namespace EffectsControl
     [HarmonyPatch(typeof(Aoe), "Awake")]
     internal static class AoeAwakePatch { private static void Postfix(Aoe __instance) { if (Plugin.Instance) Plugin.Instance.ObserveProjectile(__instance.gameObject); } }
     [HarmonyPatch(typeof(ZNetScene), "CreateObject")]
-    internal static class NetworkProjectilePatch { private static void Postfix(GameObject __result) { if (Plugin.Instance && __result) Plugin.Instance.ObserveProjectile(__result); } }
+    internal static class NetworkEffectsPatch { private static void Postfix(GameObject __result) { if (Plugin.Instance && __result) Plugin.Instance.ObserveNetworkEffect(__result); } }
 
     [HarmonyPatch(typeof(Projectile), "Setup")]
     internal static class ProjectileSetupPatch

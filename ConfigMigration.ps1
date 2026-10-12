@@ -127,7 +127,7 @@ function ConvertTo-EnglishEffectsConfig {
         })
     }
     $Text=ConvertTo-HueEffectsConfig $Text
-    return [regex]::Replace($Text,'(?m)^# Configuration file was created by plugin EffectsControl v[0-9.]+','# Configuration file was created by plugin EffectsControl v1.0.0')
+    return [regex]::Replace($Text,'(?m)^# Configuration file was created by plugin EffectsControl v[0-9.]+','# Configuration file was created by plugin EffectsControl v1.0.1')
 }
 
 function ConvertTo-HueEffectsConfig {

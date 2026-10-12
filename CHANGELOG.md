@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Local visual settings apply to other players' weapon effects and magic shields.
+
 ## 1.0.0
 
 - Weapon light brightness, glow, opacity, size and particle count controls.

@@ -7,6 +7,7 @@ Customize weapon and magic shield visuals in Valheim to keep combat effects clea
 - Adjust weapon light brightness, glow, opacity, size and particle count.
 - Choose how strongly these settings affect attack launch, projectile flight and impact.
 - Customize magic shield light brightness, glow, opacity, ovality and color.
+- Apply your local settings to your own effects and other players' weapon effects and magic shields. Each player uses their own configuration.
 - Select shield color with one hue slider.
 - Use whole-number settings with immediate updates through F1 Configuration Manager.
 - Restore original visuals by disabling the mod or its weapon and shield controls.

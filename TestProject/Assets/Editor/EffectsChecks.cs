@@ -31,15 +31,15 @@ public static class EffectsChecks
         bep.GetType("BepInEx.Paths").GetMethod("SetExecutablePath",All).Invoke(null,new object[]{Path.Combine(testRoot,"valheim.exe"),testRoot,managed,new[]{core,managed}});
         Assembly harmony = Assembly.LoadFrom(Path.Combine(core,"0Harmony.dll"));
         mod = Assembly.LoadFrom(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","bin","Release","EffectsControl.dll")));
-        Check(mod.GetName().Version == new Version(1,0,0,0), "Release assembly version");
+        Check(mod.GetName().Version == new Version(1,0,1,0), "Release assembly version");
         Check(!mod.GetReferencedAssemblies().Any(a => a.Name == "System.ValueTuple"), "No ValueTuple runtime dependency");
-        Visuals(); ShieldShape(); Catalog(); Configuration(); MigratedConfiguration();
+        Visuals(); ShieldShape(); Catalog(); Configuration(); RemoteEffects(); MigratedConfiguration();
         // Patch all real installed signatures, then unpatch without executing an attack.
         Type ht = harmony.GetType("HarmonyLib.Harmony",true);
         object patcher = Activator.CreateInstance(ht,new object[]{"Slikfoul.EffectsControl.ComponentChecks"});
         try { ht.GetMethod("PatchAll",new[]{typeof(Assembly)}).Invoke(patcher,new object[]{mod}); Check(true,"Harmony patches bind installed game signatures"); }
         finally { ht.GetMethod("UnpatchSelf").Invoke(patcher,null); }
-        string message = "EffectsControl 1.0.0 Unity checks passed: " + checks;
+        string message = "EffectsControl 1.0.1 Unity checks passed: " + checks;
         Debug.Log(message);
         File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","artifacts","unity-checks.txt")),message + "\nComponent tests in Unity Editor; no Valheim runtime playtest.\n");
     }
@@ -280,6 +280,68 @@ public static class EffectsChecks
         for(int i=0;i<fields.Length;i++) Check(ConfigValue(settings,fields[i])==values[i],"English settings bind migrated value: "+fields[i]);
         Check(ConfigValue(settings,"ShieldColor")==217,"Migrated RGB hue binds to integer Color slider");
         object tint=Get(settings,"ShieldTint"); Check((bool)tint.GetType().GetProperty("Value").GetValue(tint,null),"Migrated toggle binds to English field");
+    }
+
+    private static void RemoteEffects()
+    {
+        string path=Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","artifacts","remote-effects-checks.cfg"));
+        if(File.Exists(path)) File.Delete(path);
+        object config=Activator.CreateInstance(bep.GetType("BepInEx.Configuration.ConfigFile"),new object[]{path,false});
+        object settings=Activator.CreateInstance(mod.GetType("EffectsControl.Settings"),All,null,new[]{config},null);
+        SetConfig(settings,"Light",25); SetConfig(settings,"Opacity",0);
+        SetConfig(settings,"ShieldLight",35); SetConfig(settings,"ShieldOpacity",0);
+        var owner=new GameObject("remote effects test plugin"); owner.SetActive(false);
+        Component plugin=owner.AddComponent(mod.GetType("EffectsControl.Plugin"));
+        Set(plugin,"ready",true); Set(plugin,"rebuild",false); Set(plugin,"settings",settings); Set(plugin,"Instance",plugin);
+        object catalog=Get(plugin,"Catalog");
+        object weapon=Activator.CreateInstance(game.GetType("ItemDrop+ItemData"));
+        object shared=Activator.CreateInstance(game.GetType("ItemDrop+ItemData+SharedData"));
+        object attack=Activator.CreateInstance(game.GetType("Attack"));
+        Set(weapon,"m_shared",shared); Set(shared,"m_itemType",Enum.Parse(game.GetType("ItemDrop+ItemData+ItemType"),"TwoHandedWeapon")); Set(shared,"m_attack",attack);
+        object impact=ListWithPrefab("remote_weapon_hit"), launch=ListWithPrefab("remote_weapon_launch"), shieldList=ListWithPrefab("remote_shield");
+        Set(shared,"m_hitEffect",impact); Set(shared,"m_startEffect",launch);
+        var projectile=new GameObject("remote_projectile"); projectile.SetActive(false); projectile.AddComponent(game.GetType("Projectile")); Set(attack,"m_attackProjectile",projectile);
+        var shield=ScriptableObject.CreateInstance(game.GetType("SE_Shield")); Set(shield,"m_startEffects",shieldList);
+        Call(catalog,"RegisterItem",weapon); Call(catalog,"RegisterShield",shield);
+        MethodInfo networkHook=mod.GetType("EffectsControl.NetworkEffectsPatch").GetMethod("Postfix",All);
+        var roots=new[] { new GameObject("remote_weapon_hit(Clone)"), new GameObject("remote_weapon_launch(Clone)"), new GameObject("remote_projectile(Clone)"), new GameObject("remote_shield(Clone)"), new GameObject("unrelated_torch(Clone)") };
+        var sphere=GameObject.CreatePrimitive(PrimitiveType.Sphere); sphere.name="Sphere"; sphere.transform.SetParent(roots[3].transform);
+        Mesh nativeShieldMesh=sphere.GetComponent<MeshFilter>().sharedMesh;
+        try {
+            foreach(var root in roots) { root.AddComponent<Light>().intensity=8; root.AddComponent<MeshRenderer>(); root.AddComponent<BoxCollider>().size=new Vector3(2,3,4); }
+            // No EffectList.Create/Attack.Start/Setup runs on the observer: route only
+            // the game object's return value through the actual network postfix.
+            Set(plugin,"rebuild",true);
+            foreach(var root in roots) networkHook.Invoke(null,new object[]{root});
+            Call(plugin,"LateUpdate"); Near(roots[0].GetComponent<Light>().intensity,8,"Network effects wait for catalog readiness");
+            Set(plugin,"rebuild",false); Call(plugin,"LateUpdate");
+            Near(roots[0].GetComponent<Light>().intensity,2,"Remote plain impact uses observer's weapon brightness");
+            Near(roots[1].GetComponent<Light>().intensity,2,"Remote plain launch uses observer's launch influence");
+            Near(roots[2].GetComponent<Light>().intensity,8,"Remote flight at zero influence stays original");
+            Near(roots[3].GetComponent<Light>().intensity,2.8f,"Remote shield uses observer's shield brightness");
+            Near(roots[4].GetComponent<Light>().intensity,8,"Unrelated network light is excluded");
+            Check(roots[0].GetComponent<Renderer>().forceRenderingOff && roots[3].GetComponent<Renderer>().forceRenderingOff,"Observer zero opacity hides remote impact and shield renderers");
+            Check(!roots[2].GetComponent<Renderer>().forceRenderingOff && !roots[4].GetComponent<Renderer>().forceRenderingOff,"Flight and unrelated renderers remain visible");
+            Near(sphere.GetComponent<MeshFilter>().sharedMesh.bounds.size.x,nativeShieldMesh.bounds.size.x*0.75f,"Remote shield receives ovality");
+            foreach(var root in roots) Check(root.GetComponent<BoxCollider>().size==new Vector3(2,3,4) && root.transform.localScale==Vector3.one,"Network observation preserves collider and root transform");
+            foreach(var root in roots) networkHook.Invoke(null,new object[]{root});
+            Call(plugin,"LateUpdate"); Near(roots[0].GetComponent<Light>().intensity,2,"Repeated network observation does not compound");
+            Set(plugin,"shieldConflict",true); Set(plugin,"optionsDirty",true); Call(plugin,"LateUpdate");
+            Near(roots[3].GetComponent<Light>().intensity,8,"Shield conflict restores remote shield brightness");
+            Check(!roots[3].GetComponent<Renderer>().forceRenderingOff,"Shield conflict restores remote shield visibility");
+            object enabled=Get(settings,"Enabled"); enabled.GetType().GetProperty("Value").SetValue(enabled,false,null);
+            Set(plugin,"optionsDirty",true); Call(plugin,"LateUpdate");
+            Near(roots[0].GetComponent<Light>().intensity,8,"Disabling restores remote effect brightness");
+            Check(!roots[0].GetComponent<Renderer>().forceRenderingOff,"Disabling restores remote effect visibility");
+            Check(sphere.GetComponent<MeshFilter>().sharedMesh.vertices.SequenceEqual(nativeShieldMesh.vertices),"Disabling restores remote shield shape");
+            Call(catalog,"Clear"); object[] lookup={roots[0],Stage("Launch")};
+            Check(!(bool)catalog.GetType().GetMethod("TryEffect").Invoke(catalog,lookup),"Scene catalog clear removes old network effect registrations");
+        } finally {
+            Call(plugin,"OnDestroy");
+            foreach(var root in roots) UnityEngine.Object.DestroyImmediate(root);
+            foreach(object list in new[]{impact,launch,shieldList}) foreach(object data in (Array)Get(list,"m_effectPrefabs")) UnityEngine.Object.DestroyImmediate((GameObject)Get(data,"m_prefab"));
+            UnityEngine.Object.DestroyImmediate(projectile); UnityEngine.Object.DestroyImmediate(shield); UnityEngine.Object.DestroyImmediate(owner);
+        }
     }
 
     private static object ListWithPrefab(string name)
