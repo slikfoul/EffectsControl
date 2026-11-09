@@ -35,10 +35,11 @@ namespace EffectsControl
         {
             stage = EffectStage.Launch;
             if (!instance) return false;
-            string name = instance.name;
-            if (name.EndsWith("(Clone)", StringComparison.Ordinal)) name = name.Substring(0, name.Length - 7);
-            return prefabs.TryGetValue(name, out stage);
+            return prefabs.TryGetValue(PrefabName(instance.name), out stage);
         }
+
+        private static string PrefabName(string name) =>
+            name.EndsWith("(Clone)", StringComparison.Ordinal) ? name.Substring(0, name.Length - 7) : name;
 
         public static bool IsWeapon(ItemDrop.ItemData item)
         {
@@ -101,13 +102,20 @@ namespace EffectsControl
             Add(shield.m_stopEffects, EffectStage.Shield);
         }
 
+        public void RegisterShieldStatus(StatusEffect effect)
+        {
+            if (effect is SE_Shield shield) RegisterShield(shield);
+            else if (effect is SE_React && PrefabName(effect.name) == "Staff_FrostOrbs")
+                Add(effect.m_startEffects, EffectStage.NorthernVengeance);
+        }
+
         private void Add(EffectList list, EffectStage stage)
         {
             if (list == null || list.m_effectPrefabs == null || list.m_effectPrefabs.Length == 0) return;
             // Shield takes precedence when a list is intentionally shared.
             StageBox value;
             if (!lists.TryGetValue(list, out value)) { lists.Add(list, new StageBox { Stage = stage }); registeredLists++; }
-            else if (stage == EffectStage.Shield) value.Stage = stage;
+            else if (stage.IsShield()) value.Stage = stage;
             foreach (var effect in list.m_effectPrefabs) if (effect != null) Visit(effect.m_prefab, stage);
         }
 
@@ -118,10 +126,10 @@ namespace EffectsControl
             if (prefab.GetComponentInChildren<Character>(true) || prefab.GetComponentInChildren<Piece>(true)) return;
             var projectile = prefab.GetComponent<Projectile>();
             var aoe = prefab.GetComponent<Aoe>();
-            EffectStage prefabStage = stage == EffectStage.Shield ? stage : (aoe ? EffectStage.Impact : stage);
+            EffectStage prefabStage = stage.IsShield() ? stage : (aoe ? EffectStage.Impact : stage);
             // Remote ZDO copies bypass EffectList.Create. Keep every linked effect prefab,
             // including plain particle/light objects and shield bubbles, for that path.
-            if (!effects.ContainsKey(prefab.name) || prefabStage == EffectStage.Shield) effects[prefab.name] = prefabStage;
+            if (!effects.ContainsKey(prefab.name) || prefabStage.IsShield()) effects[prefab.name] = prefabStage;
             if (!visited.Add(prefab)) return;
             if (projectile || aoe)
             {

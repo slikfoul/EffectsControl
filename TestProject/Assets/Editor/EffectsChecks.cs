@@ -15,7 +15,7 @@ public static class EffectsChecks
     public static void Run()
     {
         string managed = @"G:\Games\SteamLibrary\steamapps\common\Valheim\valheim_Data\Managed";
-        string core = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Thunderstore Mod Manager\DataFolder\Valheim\profiles\Default\BepInEx\core");
+        string core = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"r2modmanPlus-local\Valheim\profiles\Default\BepInEx\core");
         AppDomain.CurrentDomain.AssemblyResolve += (sender,args) => {
             string name = new AssemblyName(args.Name).Name + ".dll";
             foreach (string directory in new[] { managed, core }) {
@@ -31,7 +31,7 @@ public static class EffectsChecks
         bep.GetType("BepInEx.Paths").GetMethod("SetExecutablePath",All).Invoke(null,new object[]{Path.Combine(testRoot,"valheim.exe"),testRoot,managed,new[]{core,managed}});
         Assembly harmony = Assembly.LoadFrom(Path.Combine(core,"0Harmony.dll"));
         mod = Assembly.LoadFrom(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","bin","Release","EffectsControl.dll")));
-        Check(mod.GetName().Version == new Version(1,0,1,0), "Release assembly version");
+        Check(mod.GetName().Version == new Version(1,1,0,0), "Release assembly version");
         Check(!mod.GetReferencedAssemblies().Any(a => a.Name == "System.ValueTuple"), "No ValueTuple runtime dependency");
         Visuals(); ShieldShape(); Catalog(); Configuration(); RemoteEffects(); MigratedConfiguration();
         // Patch all real installed signatures, then unpatch without executing an attack.
@@ -39,7 +39,7 @@ public static class EffectsChecks
         object patcher = Activator.CreateInstance(ht,new object[]{"Slikfoul.EffectsControl.ComponentChecks"});
         try { ht.GetMethod("PatchAll",new[]{typeof(Assembly)}).Invoke(patcher,new object[]{mod}); Check(true,"Harmony patches bind installed game signatures"); }
         finally { ht.GetMethod("UnpatchSelf").Invoke(patcher,null); }
-        string message = "EffectsControl 1.0.1 Unity checks passed: " + checks;
+        string message = "EffectsControl 1.1.0 Unity checks passed: " + checks;
         Debug.Log(message);
         File.WriteAllText(Path.GetFullPath(Path.Combine(Application.dataPath,"..","..","artifacts","unity-checks.txt")),message + "\nComponent tests in Unity Editor; no Valheim runtime playtest.\n");
     }
@@ -197,6 +197,9 @@ public static class EffectsChecks
         Check(mod.GetType("EffectsControl.VisualOptions").GetField("Shape")==null,"Anisotropic geometry control removed from DLL");
         var get=settings.GetType().GetMethod("Get"); object original=get.Invoke(settings,new[]{Stage("Shield"),(object)true});
         Near((float)Get(original,"Opacity"),1,"SubtleShield conflict returns native visuals");
+        Check(configText.Contains("Magic Shield Effect = true") && configText.Contains("Northern Vengeance Effect = true")
+            && !configText.Contains("Change color ="),"Both shield profiles are enabled by default");
+        Check(ConfigValue(settings,"ShieldColor")==0 && ConfigValue(settings,"ShieldGlow")==72,"Protection uses the matching appearance defaults");
         var shieldOptions=get.Invoke(settings,new[]{Stage("Shield"),(object)false}); Near((float)Get(shieldOptions,"Size"),1,"Shield keeps native dimensions");
         Near((float)Get(shieldOptions,"ShieldOvality"),0.5f,"Shield default oval restores previous proportions");
         Near((float)Get(original,"ShieldOvality"),0,"Shield conflict restores native shape");
@@ -246,9 +249,10 @@ public static class EffectsChecks
         }
         SetConfig(settings,"ShieldColor",999); Check(ConfigValue(settings,"ShieldColor")==360,"Hue is clamped to the slider maximum");
         SetConfig(settings,"ShieldColor",-1); Check(ConfigValue(settings,"ShieldColor")==0,"Hue is clamped to the slider minimum");
-        object tintToggle=Get(settings,"ShieldTint"); tintToggle.GetType().GetProperty("Value").SetValue(tintToggle,false,null);
+        Check((bool)Get(shieldOptions,"TintEnabled"),"Enabled profile always applies the selected hue");
+        SetConfig(settings,"Shields",false);
         shieldOptions=get.Invoke(settings,new[]{Stage("Shield"),(object)false});
-        Check(!(bool)Get(shieldOptions,"TintEnabled"),"Color slider respects Change color toggle");
+        Check(!(bool)Get(shieldOptions,"TintEnabled") && (float)Get(shieldOptions,"Light")==1f,"Disabling Magic Shield Effect restores the entire appearance");
         Check(!configText.Contains("Красный =") && !configText.Contains("Зелёный =") && !configText.Contains("Синий ="),"Separate RGB sliders absent");
         entry=Get(settings,"Enabled"); entry.GetType().GetProperty("Value").SetValue(entry,false,null);
         var off=get.Invoke(settings,new[]{Stage("Impact"),(object)false}); Near((float)Get(off,"Size"),1,"Disabling restores original coefficients");
@@ -279,7 +283,6 @@ public static class EffectsChecks
         int[] values={100,51,35,55,40,35,100,35,35,45,30,50};
         for(int i=0;i<fields.Length;i++) Check(ConfigValue(settings,fields[i])==values[i],"English settings bind migrated value: "+fields[i]);
         Check(ConfigValue(settings,"ShieldColor")==217,"Migrated RGB hue binds to integer Color slider");
-        object tint=Get(settings,"ShieldTint"); Check((bool)tint.GetType().GetProperty("Value").GetValue(tint,null),"Migrated toggle binds to English field");
     }
 
     private static void RemoteEffects()
@@ -289,7 +292,7 @@ public static class EffectsChecks
         object config=Activator.CreateInstance(bep.GetType("BepInEx.Configuration.ConfigFile"),new object[]{path,false});
         object settings=Activator.CreateInstance(mod.GetType("EffectsControl.Settings"),All,null,new[]{config},null);
         SetConfig(settings,"Light",25); SetConfig(settings,"Opacity",0);
-        SetConfig(settings,"ShieldLight",35); SetConfig(settings,"ShieldOpacity",0);
+        SetConfig(settings,"Shields",true); SetConfig(settings,"VengeanceEnabled",false); SetConfig(settings,"ShieldLight",35); SetConfig(settings,"ShieldOpacity",0);
         var owner=new GameObject("remote effects test plugin"); owner.SetActive(false);
         Component plugin=owner.AddComponent(mod.GetType("EffectsControl.Plugin"));
         Set(plugin,"ready",true); Set(plugin,"rebuild",false); Set(plugin,"settings",settings); Set(plugin,"Instance",plugin);
@@ -303,16 +306,46 @@ public static class EffectsChecks
         var projectile=new GameObject("remote_projectile"); projectile.SetActive(false); projectile.AddComponent(game.GetType("Projectile")); Set(attack,"m_attackProjectile",projectile);
         var shield=ScriptableObject.CreateInstance(game.GetType("SE_Shield")); Set(shield,"m_startEffects",shieldList);
         Call(catalog,"RegisterItem",weapon); Call(catalog,"RegisterShield",shield);
+        object frostList=ListWithPrefab("vfx_FrostOrbs"), retaliation=ListWithPrefab("retaliation"), unrelatedList=ListWithPrefab("unrelated_torch");
+        var reaction=ScriptableObject.CreateInstance(game.GetType("SE_React")); reaction.name="Staff_FrostOrbs(Clone)";
+        Set(reaction,"m_startEffects",frostList); Set(reaction,"m_stopEffects",retaliation);
+        var unrelated=ScriptableObject.CreateInstance(game.GetType("SE_React")); unrelated.name="OtherReaction";
+        Set(unrelated,"m_startEffects",unrelatedList);
+        Call(catalog,"RegisterShieldStatus",reaction); Call(catalog,"RegisterShieldStatus",unrelated);
+        Check(TryList(catalog,frostList,"NorthernVengeance") && !TryList(catalog,retaliation,"NorthernVengeance"),"Only the reflecting shield start list is registered");
         MethodInfo networkHook=mod.GetType("EffectsControl.NetworkEffectsPatch").GetMethod("Postfix",All);
-        var roots=new[] { new GameObject("remote_weapon_hit(Clone)"), new GameObject("remote_weapon_launch(Clone)"), new GameObject("remote_projectile(Clone)"), new GameObject("remote_shield(Clone)"), new GameObject("unrelated_torch(Clone)") };
+        var roots=new[] { new GameObject("remote_weapon_hit(Clone)"), new GameObject("remote_weapon_launch(Clone)"), new GameObject("remote_projectile(Clone)"), new GameObject("remote_shield(Clone)"), new GameObject("unrelated_torch(Clone)"), new GameObject("vfx_FrostOrbs(Clone)"), new GameObject("local Frost Orbs") };
         var sphere=GameObject.CreatePrimitive(PrimitiveType.Sphere); sphere.name="Sphere"; sphere.transform.SetParent(roots[3].transform);
         Mesh nativeShieldMesh=sphere.GetComponent<MeshFilter>().sharedMesh;
+        var frostSphere=GameObject.CreatePrimitive(PrimitiveType.Sphere); frostSphere.name="Sphere"; frostSphere.transform.SetParent(roots[5].transform);
+        var frostMesh=frostSphere.GetComponent<MeshFilter>();
+        Vector3 nativeFrostSize=frostMesh.sharedMesh.bounds.size;
         try {
+            var bindNotices=mod.GetType("EffectsControl.Settings").GetMethod("BindOwnerNotices",All);
+            // Exercise the actual per-shield notification predicate and ownership mask.
+            int visibleMask=0;
+            MethodInfo bindFixture=typeof(EffectsChecks).GetMethod(nameof(BindNoticeFixture),All)
+                .MakeGenericMethod(mod.GetType("EffectsControl.EffectStage"));
+            bindFixture.Invoke(null,new object[]{config,bindNotices,(Func<int>)(()=>visibleMask)});
+            var lookup=config.GetType().GetMethods().Single(m=>m.Name=="TryGetEntry" && m.GetParameters().Length==3).MakeGenericMethod(typeof(string));
+            bool Visible(string section) {
+                object[] args={section,"Appearance control",null};
+                Check((bool)lookup.Invoke(config,args),"Appearance notice exists in "+section);
+                var description=args[2].GetType().GetProperty("Description").GetValue(args[2]);
+                var tags=(object[])description.GetType().GetProperty("Tags").GetValue(description);
+                Check((bool)Get(tags[0],"HideSettingName") && (bool)Get(tags[0],"HideDefaultButton")
+                    && Get(tags[0],"CustomDrawer") is Delegate,"Notice renders as a label without a setting name or reset button");
+                return (bool)tags[0].GetType().GetProperty("Browsable").GetValue(tags[0]);
+            }
+            Check(!Visible("4. Magic Shield") && !Visible("5. Northern Vengeance"),"No notices when the other mod owns neither shield");
+            visibleMask=2;
+            Check(!Visible("4. Magic Shield") && Visible("5. Northern Vengeance"),"Only the externally controlled shield has a notice");
             foreach(var root in roots) { root.AddComponent<Light>().intensity=8; root.AddComponent<MeshRenderer>(); root.AddComponent<BoxCollider>().size=new Vector3(2,3,4); }
             // No EffectList.Create/Attack.Start/Setup runs on the observer: route only
             // the game object's return value through the actual network postfix.
             Set(plugin,"rebuild",true);
-            foreach(var root in roots) networkHook.Invoke(null,new object[]{root});
+            foreach(var root in roots.Take(6)) networkHook.Invoke(null,new object[]{root});
+            mod.GetType("EffectsControl.EffectsPatch").GetMethod("Postfix",All).Invoke(null,new object[]{frostList,new[]{roots[6]}});
             Call(plugin,"LateUpdate"); Near(roots[0].GetComponent<Light>().intensity,8,"Network effects wait for catalog readiness");
             Set(plugin,"rebuild",false); Call(plugin,"LateUpdate");
             Near(roots[0].GetComponent<Light>().intensity,2,"Remote plain impact uses observer's weapon brightness");
@@ -320,6 +353,26 @@ public static class EffectsChecks
             Near(roots[2].GetComponent<Light>().intensity,8,"Remote flight at zero influence stays original");
             Near(roots[3].GetComponent<Light>().intensity,2.8f,"Remote shield uses observer's shield brightness");
             Near(roots[4].GetComponent<Light>().intensity,8,"Unrelated network light is excluded");
+            Near(roots[5].GetComponent<Light>().intensity,8,"Reflecting shield is unchanged when its profile is off");
+            var vengeanceEnabled=Get(settings,"VengeanceEnabled");
+            vengeanceEnabled.GetType().GetProperty("Value").SetValue(vengeanceEnabled,true,null);
+            SetConfig(settings,"VengeanceLight",20);
+            Set(plugin,"optionsDirty",true); Call(plugin,"LateUpdate"); Call(plugin,"LateUpdate");
+            Near(roots[5].GetComponent<Light>().intensity,1.6f,"Remote reflecting shield uses its own brightness");
+            Near(roots[6].GetComponent<Light>().intensity,1.6f,"Local reflecting shield uses the same profile");
+            Near(roots[3].GetComponent<Light>().intensity,2.8f,"Reflecting shield settings leave the protection shield alone");
+            Near(frostMesh.sharedMesh.bounds.size.x,nativeFrostSize.x*0.9f*0.75f,"Reflecting sphere uses matching size normalization and ovality");
+            Call(plugin,"ReleaseShieldAppearance",2);
+            Near(roots[5].GetComponent<Light>().intensity,8,"Priority transfer restores the remote reflecting shield synchronously");
+            Near(roots[6].GetComponent<Light>().intensity,8,"Priority transfer restores the local reflecting shield synchronously");
+            Near(roots[3].GetComponent<Light>().intensity,2.8f,"Priority transfer does not release the unclaimed protection shield");
+            Near(frostMesh.sharedMesh.bounds.size.x,nativeFrostSize.x,"Priority transfer restores original geometry before the next owner captures it");
+            Call(plugin,"LateUpdate"); Call(plugin,"LateUpdate");
+            Near(roots[5].GetComponent<Light>().intensity,1.6f,"Unclaimed reflecting shield resumes EffectsControl settings without compounding");
+            vengeanceEnabled.GetType().GetProperty("Value").SetValue(vengeanceEnabled,false,null);
+            Set(plugin,"optionsDirty",true); Call(plugin,"LateUpdate");
+            Near(roots[5].GetComponent<Light>().intensity,8,"Disabling reflecting appearance restores native brightness");
+            Near(frostMesh.sharedMesh.bounds.size.x,nativeFrostSize.x,"Disabling reflecting appearance restores native geometry");
             Check(roots[0].GetComponent<Renderer>().forceRenderingOff && roots[3].GetComponent<Renderer>().forceRenderingOff,"Observer zero opacity hides remote impact and shield renderers");
             Check(!roots[2].GetComponent<Renderer>().forceRenderingOff && !roots[4].GetComponent<Renderer>().forceRenderingOff,"Flight and unrelated renderers remain visible");
             Near(sphere.GetComponent<MeshFilter>().sharedMesh.bounds.size.x,nativeShieldMesh.bounds.size.x*0.75f,"Remote shield receives ovality");
@@ -339,9 +392,16 @@ public static class EffectsChecks
         } finally {
             Call(plugin,"OnDestroy");
             foreach(var root in roots) UnityEngine.Object.DestroyImmediate(root);
-            foreach(object list in new[]{impact,launch,shieldList}) foreach(object data in (Array)Get(list,"m_effectPrefabs")) UnityEngine.Object.DestroyImmediate((GameObject)Get(data,"m_prefab"));
+            foreach(object list in new[]{impact,launch,shieldList,frostList,retaliation,unrelatedList}) foreach(object data in (Array)Get(list,"m_effectPrefabs")) UnityEngine.Object.DestroyImmediate((GameObject)Get(data,"m_prefab"));
+            UnityEngine.Object.DestroyImmediate(reaction); UnityEngine.Object.DestroyImmediate(unrelated);
             UnityEngine.Object.DestroyImmediate(projectile); UnityEngine.Object.DestroyImmediate(shield); UnityEngine.Object.DestroyImmediate(owner);
         }
+    }
+
+    private static void BindNoticeFixture<T>(object config, MethodInfo bind, Func<int> mask)
+    {
+        Func<T,bool> owned=stage => (mask() & (stage.ToString()=="Shield" ? 1 : 2))!=0;
+        bind.Invoke(null,new object[]{config,owned});
     }
 
     private static object ListWithPrefab(string name)
@@ -356,6 +416,7 @@ public static class EffectsChecks
     private static void Set(object target,string field,object value) { target.GetType().GetField(field,All).SetValue(target,value); }
     private static object Get(object target,string field) { return target.GetType().GetField(field,All).GetValue(target); }
     private static void SetConfig(object settings,string field,int value) { object entry=Get(settings,field); entry.GetType().GetProperty("Value").SetValue(entry,value,null); }
+    private static void SetConfig(object settings,string field,bool value) { object entry=Get(settings,field); entry.GetType().GetProperty("Value").SetValue(entry,value,null); }
     private static int ConfigValue(object settings,string field) { object entry=Get(settings,field); return (int)entry.GetType().GetProperty("Value").GetValue(entry,null); }
     private static object Call(object target,string method,params object[] args) { return target.GetType().GetMethod(method,All).Invoke(target,args); }
     private static void Near(float actual,float expected,string message) { Check(Mathf.Abs(actual-expected)<0.0001f,message+" expected="+expected+" actual="+actual); }

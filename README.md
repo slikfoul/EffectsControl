@@ -54,22 +54,35 @@ With the defaults, attack launch and impact use the general settings, while flyi
 
 ## Magic shield settings
 
-**4. Magic Shield** controls the Staff of Protection's visual shield.
+**4. Magic Shield** controls the Staff of Protection's visual shield. Enable **Magic Shield Effect** to apply its appearance settings.
 
 | Setting | Default |
 |---|---:|
+| Magic Shield Effect | On |
 | Light brightness | 35 |
-| Glow | 45 |
+| Glow | 72 |
 | Opacity | 30 |
 | Ovality | 50 |
-| Change color | Off |
 | Color | 0 |
 
 **Ovality** ranges from **0 to 100**: 0 is round, 50 is oval and 100 is a narrower oval.
 
-Enable **Change color**, then use **Color** to choose a hue from **0 to 360**: red at 0/360, yellow at 60, green at 120, cyan at 180, blue at 240 and magenta at 300. **Glow** controls intensity and **Opacity** controls transparency.
+Use **Color** to choose a hue from **0 to 360**: red at 0/360, yellow at 60, green at 120, cyan at 180, blue at 240 and magenta at 300. **Glow** controls intensity and **Opacity** controls transparency.
 
 Shield protection and duration remain unchanged.
+
+**5. Northern Vengeance** controls the reflecting shield separately. Enable **Northern Vengeance Effect** to customize the appearance on your client.
+
+| Setting | Default |
+|---|---:|
+| Northern Vengeance Effect | On |
+| Color | 200 |
+| Glow | 72 |
+| Light brightness | 35 |
+| Opacity | 30 |
+| Ovality | 50 |
+
+These settings apply to the shield bubble. Retaliation and duration remain unchanged.
 
 ## Installation
 
@@ -83,7 +96,7 @@ Open **F1 Configuration Manager** and select **EffectsControl** to change settin
 
 Configuration file: `BepInEx/config/Slikfoul.EffectsControl.cfg`.
 
-Author: **Slikfoul**. [Source code and MIT license](https://github.com/slikfoul/EffectsControl).
+[Source code and MIT license](https://github.com/slikfoul/EffectsControl).
 
 ## Building from source
 

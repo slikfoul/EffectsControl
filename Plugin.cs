@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using BepInEx;
 using BepInEx.Bootstrap;
+using BepInEx.Configuration;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -14,24 +15,31 @@ namespace EffectsControl
     {
         public const string PluginGuid = "Slikfoul.EffectsControl";
         public const string PluginName = "EffectsControl";
-        public const string PluginVersion = "1.0.1";
+        public const string PluginVersion = "1.1.0";
         internal static Plugin Instance;
         internal readonly EffectCatalog Catalog = new EffectCatalog();
         private readonly Dictionary<GameObject, VisualState> active = new Dictionary<GameObject, VisualState>();
         private readonly Dictionary<GameObject, EffectStage> pending = new Dictionary<GameObject, EffectStage>();
+        private readonly Dictionary<GameObject, EffectStage> inactiveShields = new Dictionary<GameObject, EffectStage>();
         private readonly HashSet<GameObject> pendingNetwork = new HashSet<GameObject>();
         private readonly List<GameObject> expired = new List<GameObject>();
-        private readonly VisualOptions[] options = new VisualOptions[4];
+        private readonly VisualOptions[] options = new VisualOptions[(int)EffectStage.NorthernVengeance + 1];
         private Settings settings;
         private Harmony harmony;
         private bool rebuild = true, ready, shieldConflict;
         private bool optionsDirty = true;
+        private int externalShieldMask;
+        private int previousShieldMask;
+        private bool rescanShields;
+        private BaseUnityPlugin prioritySource;
+        private Func<int> readExternalShieldMask;
         private int failures;
 
         private void Awake()
         {
             Instance = this;
             settings = new Settings(Config);
+            Settings.BindOwnerNotices(Config, stage => (externalShieldMask & stage.ShieldBit()) != 0);
             settings.Changed += () => { optionsDirty = true; };
             if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null) { Logger.LogInfo("Client visual mod: headless host skipped."); return; }
             harmony = new Harmony(PluginGuid);
@@ -52,11 +60,7 @@ namespace EffectsControl
                     var item = prefab.GetComponent<ItemDrop>();
                     if (item) Catalog.RegisterItem(item.m_itemData);
                 }
-                foreach (var effect in ObjectDB.instance.m_StatusEffects)
-                {
-                    var shield = effect as SE_Shield;
-                    if (shield) Catalog.RegisterShield(shield);
-                }
+                foreach (var effect in ObjectDB.instance.m_StatusEffects) Catalog.RegisterShieldStatus(effect);
             }
             foreach (var root in active.Keys)
             {
@@ -69,18 +73,23 @@ namespace EffectsControl
                 if (string.Equals(info.Metadata.Name, "SubtleShield", StringComparison.OrdinalIgnoreCase) || info.Metadata.GUID.IndexOf("subtleshield", StringComparison.OrdinalIgnoreCase) >= 0) conflict = true;
             if (conflict && !shieldConflict) Logger.LogWarning("SubtleShield is active. EffectsControl shield controls are suspended; disable SubtleShield and restart to use this mod's shield settings.");
             shieldConflict = conflict;
+            rescanShields = true;
             optionsDirty = true;
             rebuild = false;
         }
 
         private void Update()
         {
-            if (ready && rebuild) Guard(RebuildCatalog);
+            if (!ready) return;
+            if (rebuild) Guard(RebuildCatalog);
+            foreach (var state in active.Values)
+                if (state.Stage.IsShield()) state.ReleaseLightWrites();
         }
 
         private void LateUpdate()
         {
             if (!ready) return;
+            externalShieldMask = ReadExternalShieldMask();
             // A network object can arrive before ObjectDB/scene catalog initialization.
             // Resolve it only after the requested rebuild, using this client's settings.
             if (!rebuild)
@@ -94,7 +103,12 @@ namespace EffectsControl
             // e.g. LightFlicker never captures an already scaled light as its native intensity.
             foreach (var pair in pending)
             {
-                if (!pair.Key || active.ContainsKey(pair.Key) || (pair.Value == EffectStage.Shield && shieldConflict)) continue;
+                if (!pair.Key || active.ContainsKey(pair.Key)) continue;
+                if (pair.Value.IsShield() && !CanControlShield(pair.Value))
+                {
+                    inactiveShields[pair.Key] = pair.Value;
+                    continue;
+                }
                 Guard(() => {
                     var state = new VisualState(pair.Key, pair.Value);
                     if (state.Empty) state.Dispose(); else active.Add(pair.Key, state);
@@ -105,17 +119,113 @@ namespace EffectsControl
             foreach (var pair in active)
             {
                 if (!pair.Key) { pair.Value.Dispose(); expired.Add(pair.Key); continue; }
+                if (pair.Value.Stage.IsShield() && !CanControlShield(pair.Value.Stage))
+                {
+                    pair.Value.Dispose();
+                    inactiveShields[pair.Key] = pair.Value.Stage;
+                    expired.Add(pair.Key);
+                    continue;
+                }
                 try { pair.Value.Apply(options[(int)pair.Value.Stage]); }
                 catch (Exception error) { pair.Value.Dispose(); expired.Add(pair.Key); Report(error); }
             }
             foreach (var key in expired) active.Remove(key);
+            expired.Clear();
+            foreach (var pair in inactiveShields)
+            {
+                if (!pair.Key) expired.Add(pair.Key);
+                else if (CanControlShield(pair.Value))
+                {
+                    // Capture next frame, after any other visual owner has restored its state.
+                    pending[pair.Key] = pair.Value;
+                    expired.Add(pair.Key);
+                }
+            }
+            foreach (var key in expired) inactiveShields.Remove(key);
+            if (!rebuild)
+            {
+                int mask = RequestedShieldMask() & ~externalShieldMask;
+                int discover = rescanShields ? mask : mask & ~previousShieldMask;
+                rescanShields = false;
+                previousShieldMask = mask;
+                if (discover != 0) Guard(() => DiscoverExistingShields(discover));
+            }
+        }
+
+        private void DiscoverExistingShields(int mask)
+        {
+            foreach (var root in Resources.FindObjectsOfTypeAll<GameObject>())
+                if (root && root.scene.IsValid() && root.scene.isLoaded && root.activeInHierarchy
+                    && Catalog.TryEffect(root, out var stage) && (stage.ShieldBit() & mask) != 0)
+                    Observe(root, stage);
         }
 
         internal void Observe(GameObject root, EffectStage stage)
         {
-            if (!ready || !root || active.ContainsKey(root) || pending.ContainsKey(root) || (stage == EffectStage.Shield && shieldConflict)) return;
+            if (!ready || !root || active.ContainsKey(root) || pending.ContainsKey(root) || inactiveShields.ContainsKey(root)) return;
             if (root.GetComponentInChildren<Character>(true) || root.GetComponentInChildren<Piece>(true)) return;
             pending.Add(root, stage);
+        }
+
+        private bool CanControlShield(EffectStage stage) =>
+            ((RequestedShieldMask() & ~externalShieldMask) & stage.ShieldBit()) != 0;
+
+        private int RequestedShieldMask() =>
+            !ready || shieldConflict || !settings.Enabled.Value ? 0 :
+            (settings.Shields.Value ? 1 : 0) | (settings.VengeanceEnabled.Value ? 2 : 0);
+
+        private int ReadExternalShieldMask()
+        {
+            if (!Chainloader.PluginInfos.TryGetValue("Slikfoul.ImprovedMagicShield", out var info) || !info.Instance)
+            {
+                prioritySource = null; readExternalShieldMask = null;
+                return 0;
+            }
+            if (prioritySource != info.Instance)
+            {
+                prioritySource = info.Instance;
+                readExternalShieldMask = null;
+                Guard(() => {
+                    var connect = prioritySource.GetType().GetMethod("ConnectShieldAppearancePriority",
+                        new[] { typeof(int), typeof(Action<int>), typeof(Func<int>) });
+                    if (connect?.ReturnType == typeof(Func<int>))
+                        readExternalShieldMask = (Func<int>)connect.Invoke(prioritySource,
+                            new object[] { 1, (Action<int>)ReleaseShieldAppearance, (Func<int>)RequestedShieldMask });
+                });
+            }
+            if (readExternalShieldMask != null)
+            {
+                // A faulty peer cannot leave both mods writing to the same visual.
+                int mask = 3;
+                Guard(() => mask = readExternalShieldMask() & 3);
+                return mask;
+            }
+            // Older Improved Magic Shield permits its appearances when our protection
+            // control is off. Preserve that behavior during a staggered update.
+            if (shieldConflict || settings.Enabled.Value && settings.Shields.Value) return 0;
+            var config = info.Instance.Config;
+            if (!config.TryGetEntry("1 - General", "Enabled", out ConfigEntry<bool> enabled) || !enabled.Value) return 0;
+            return (LegacyEnabled("3 - Magic Shield", "Magic Shield Effect") ? 1 : 0)
+                | (LegacyEnabled("4 - Northern Vengeance", "Northern Vengeance Effect") ? 2 : 0);
+
+            bool LegacyEnabled(string section, string key) =>
+                config.TryGetEntry(section, key, out ConfigEntry<bool> entry) && entry.Value;
+        }
+
+        private void ReleaseShieldAppearance(int mask)
+        {
+            if (!ready) return;
+            externalShieldMask |= mask & 3;
+            expired.Clear();
+            foreach (var pair in active)
+            {
+                var stage = pair.Value.Stage;
+                if ((stage.ShieldBit() & mask) == 0) continue;
+                pair.Value.Dispose();
+                if (pair.Key) inactiveShields[pair.Key] = stage;
+                expired.Add(pair.Key);
+            }
+            foreach (var root in expired) active.Remove(root);
         }
 
         private void RefreshOptions()
@@ -161,7 +271,7 @@ namespace EffectsControl
             ready = false;
             if (harmony != null) harmony.UnpatchSelf();
             foreach (var state in active.Values) state.Dispose();
-            active.Clear(); pending.Clear(); pendingNetwork.Clear(); Catalog.Clear(); Instance = null;
+            active.Clear(); pending.Clear(); inactiveShields.Clear(); pendingNetwork.Clear(); Catalog.Clear(); Instance = null;
         }
     }
 
@@ -227,5 +337,15 @@ namespace EffectsControl
     internal static class ShieldPatch
     {
         private static void Prefix(SE_Shield __instance) { var p = Plugin.Instance; if (p) p.Guard(() => p.Catalog.RegisterShield(__instance)); }
+    }
+
+    [HarmonyPatch(typeof(StatusEffect), "Setup")]
+    internal static class ShieldStatusPatch
+    {
+        private static void Prefix(StatusEffect __instance)
+        {
+            var p = Plugin.Instance;
+            if (p && __instance is SE_React) p.Guard(() => p.Catalog.RegisterShieldStatus(__instance));
+        }
     }
 }

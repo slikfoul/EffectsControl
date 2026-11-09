@@ -29,7 +29,7 @@ namespace EffectsControl
                     if (component is MeshRenderer)
                     {
                         var filter = component.GetComponent<MeshFilter>();
-                        if (filter && filter.sharedMesh && filter.sharedMesh.isReadable) meshes.Add(new MeshState(filter, stage == EffectStage.Shield && string.Equals(filter.name, "Sphere", StringComparison.OrdinalIgnoreCase)));
+                        if (filter && filter.sharedMesh && filter.sharedMesh.isReadable) meshes.Add(new MeshState(filter, stage.IsShield() && string.Equals(filter.name, "Sphere", StringComparison.OrdinalIgnoreCase)));
                     }
                 }
             }
@@ -43,6 +43,11 @@ namespace EffectsControl
             foreach (var state in particles) state.Apply(options);
             foreach (var state in renderers) state.Apply(options);
             foreach (var state in meshes) state.Apply(options);
+        }
+
+        internal void ReleaseLightWrites()
+        {
+            foreach (var state in lights) state.Restore();
         }
 
         public void Dispose()
@@ -68,11 +73,11 @@ namespace EffectsControl
             if (!light) return;
             // Native LightFlicker writes its fading intensity in Update. Preserve that animated
             // value each time it writes, while avoiding scaling our own output again.
-            if (wrote && light.intensity != lastWritten) native = light.intensity;
+            if (!wrote || light.intensity != lastWritten) native = light.intensity;
             lastWritten = native * factor;
             light.intensity = lastWritten; wrote = true;
         }
-        public void Restore() { if (light && wrote && light.intensity == lastWritten) light.intensity = native; }
+        public void Restore() { if (light && wrote && light.intensity == lastWritten) light.intensity = native; wrote = false; }
     }
 
     internal static class CurveScale
